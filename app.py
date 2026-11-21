@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,9 +20,87 @@ from scriptgen import DEMO_SCRIPT, POSES
 
 ROOT = Path(__file__).resolve().parent
 JOBS = ROOT / "work" / "studio"
+PROJECTS = ROOT / "projects"
 TONES = {"Calm": 155, "Hyped": 185, "Deadpan": 165}
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
+
+
+def _project_file(project_id: str) -> Path:
+    if not isinstance(project_id, str) or not re.fullmatch(r"[0-9a-f]{16}", project_id):
+        raise ValueError("Invalid project ID.")
+    return PROJECTS / f"{project_id}.json"
+
+
+def list_projects() -> list[dict]:
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    items = []
+    for path in PROJECTS.glob("*.json"):
+        if not re.fullmatch(r"[0-9a-f]{16}", path.stem):
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            scenes = raw.get("scenes") or []
+            thumb = next((s.get("image") for s in scenes if isinstance(s, dict) and s.get("image")), "")
+            updated = int(raw.get("updated_at") or path.stat().st_mtime)
+            name = str(raw.get("project_name") or "").strip() or str(raw.get("topic") or "Untitled").splitlines()[0][:60]
+            items.append({
+                "id": path.stem,
+                "name": name,
+                "topic": str(raw.get("topic") or "")[:140],
+                "scene_count": len(scenes),
+                "theme": str(raw.get("theme") or "dark"),
+                "accent": str(raw.get("accent") or "#FF6B3D"),
+                "updated_at": updated,
+                "thumb": thumb,
+            })
+        except Exception:
+            continue
+    items.sort(key=lambda item: item["updated_at"], reverse=True)
+    return items
+
+
+def save_project_record(data: dict) -> dict:
+    validated = dict(validate(data))
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    pid = str(validated.get("project_id") or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{16}", pid):
+        pid = uuid.uuid4().hex[:16]
+    name = str(validated.get("project_name") or "").strip()[:80]
+    if not name:
+        name = validated["topic"].splitlines()[0].strip()[:60] or "Untitled Project"
+    validated["project_id"] = pid
+    validated["project_name"] = name
+    validated["updated_at"] = round(time.time())
+    _project_file(pid).write_text(json.dumps(validated, indent=2), encoding="utf-8")
+    return {"id": pid, "name": name, "updated_at": validated["updated_at"], "project": validated, "projects": list_projects()}
+
+
+def load_project_record(project_id: str) -> dict:
+    path = _project_file(project_id)
+    if not path.is_file():
+        raise ValueError("Project not found.")
+    raw = validate(json.loads(path.read_text(encoding="utf-8")))
+    raw["project_id"] = project_id
+    if not str(raw.get("project_name") or "").strip():
+        raw["project_name"] = raw["topic"].splitlines()[0].strip()[:60] or "Untitled Project"
+    return raw
+
+
+def duplicate_project_record(project_id: str) -> dict:
+    orig = dict(load_project_record(project_id))
+    orig["project_id"] = uuid.uuid4().hex[:16]
+    base_name = str(orig.get("project_name") or "Project").strip()
+    orig["project_name"] = f"{base_name} (Copy)"[:80]
+    return save_project_record(orig)
+
+
+def delete_project_record(project_id: str) -> list[dict]:
+    path = _project_file(project_id)
+    if not path.is_file():
+        raise ValueError("Project not found.")
+    path.unlink(missing_ok=True)
+    return list_projects()
 
 
 def validate(data: dict) -> dict:
@@ -127,6 +206,12 @@ def validate(data: dict) -> dict:
         from download_model import CATALOG
         if data["download_model_key"] not in CATALOG:
             raise ValueError("Unknown downloadable model.")
+    if "project_id" in data and data["project_id"]:
+        if not isinstance(data["project_id"], str) or not re.fullmatch(r"[0-9a-f]{16}", data["project_id"]):
+            raise ValueError("Invalid project ID.")
+    if "project_name" in data:
+        if not isinstance(data["project_name"], str) or len(data["project_name"]) > 80:
+            raise ValueError("Project name must be at most 80 characters.")
     return data
 
 
@@ -289,6 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             import music
             import tts
             self.json({"script": DEMO_SCRIPT,
+                       "projects": list_projects(),
                        "models": [str(p) for p in (ROOT / "models").glob("*.gguf")
                                   if not re.search(r"-0000[2-9]-of-", p.name)],
                        "model_catalog": download_model.catalog_status(),
@@ -300,6 +386,14 @@ class Handler(BaseHTTPRequestHandler):
                                for name in ("kokoro-v1.0.onnx", "voices-v1.0.bin")),
                        "edge_voices": [{"id": key, "name": name} for key, name in tts.EDGE_VOICES.items()],
                        "edge_ready": importlib.util.find_spec("edge_tts") is not None})
+        elif path == "/api/projects":
+            self.json({"projects": list_projects()})
+        elif re.fullmatch(r"/api/projects/[0-9a-f]{16}", path):
+            try:
+                pid = path.rsplit("/", 1)[-1]
+                self.json({"project": load_project_record(pid)})
+            except ValueError as exc:
+                self.json({"error": str(exc)}, 404)
         elif path.startswith("/api/jobs/"):
             with lock:
                 result = dict(jobs.get(path.rsplit("/", 1)[-1], {}))
@@ -354,6 +448,19 @@ class Handler(BaseHTTPRequestHandler):
                 import music
                 filename = unquote(self.headers.get("X-Filename", "music.mp3"))
                 self.json(music.save_uploaded_music(self.rfile.read(length), filename), 200)
+                return
+            if re.fullmatch(r"/api/projects/[0-9a-f]{16}/(duplicate|delete)", self.path):
+                _, _, _, pid, act = self.path.split("/")
+                if act == "duplicate":
+                    self.json(duplicate_project_record(pid), 200)
+                else:
+                    self.json({"projects": delete_project_record(pid)}, 200)
+                return
+            if self.path == "/api/projects":
+                if not 0 < length <= 64000:
+                    raise ValueError("Project is too large or empty.")
+                body = json.loads(self.rfile.read(length))
+                self.json(save_project_record(body), 200)
                 return
             if self.path == "/api/search-music":
                 if not 0 < length <= 4000:

@@ -10,8 +10,33 @@
 <body>
   <header>
     <a class="brand" href="/"><span class="logo">▶</span> Clipwright</a>
+    <div class="project-bar" role="toolbar" aria-label="Project workspace">
+      <button id="open-projects" type="button" title="Open Project Manager">📁 Projects <span id="project-count" class="badge">0</span></button>
+      <input id="project-name" type="text" maxlength="80" placeholder="Untitled Project" aria-label="Project name">
+      <button id="project-save" type="button" class="primary" title="Save project to workspace">💾 Save</button>
+      <button id="project-new" type="button" title="Create a new project">+ New</button>
+      <button id="project-dup" type="button" title="Duplicate current project">⎘ Duplicate</button>
+      <button id="project-close" type="button" title="Save and close to Project Manager">✕ Close</button>
+    </div>
     <span id="save-state">Local studio</span>
   </header>
+  <section id="project-manager" class="project-manager" aria-label="Project Manager" hidden>
+    <div class="pm-inner">
+      <div class="pm-header">
+        <div>
+          <h2>📁 Project Manager</h2>
+          <p class="hint">Switch between saved video projects, duplicate drafts, import/export JSON files, or start a new project.</p>
+        </div>
+        <div class="pm-actions">
+          <input id="project-search" type="search" maxlength="80" placeholder="Search projects…" aria-label="Search projects">
+          <button id="pm-new" type="button" class="primary">+ New project</button>
+          <button id="pm-import" type="button">📥 Import JSON</button>
+          <button id="pm-resume" type="button">Resume editor →</button>
+        </div>
+      </div>
+      <div id="project-grid" class="project-grid"></div>
+    </div>
+  </section>
   <section id="task-progress" class="task-progress" aria-label="Current task" hidden>
     <div class="task-heading">
       <strong id="task-title">Working…</strong>
@@ -22,7 +47,7 @@
     <div id="task-stage" role="status" aria-live="polite"></div>
     <progress id="progress" max="100" aria-labelledby="task-title task-stage"></progress>
   </section>
-  <main>
+  <main id="workspace">
     <aside id="idea">
       <h2>Idea</h2>
       <label for="topic">Topic or notes</label>

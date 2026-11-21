@@ -9,8 +9,8 @@ const numeric = new Set(["rate", "gpu_layers", "n_ctx", "fps", "avatar_size", "b
 const flags = new Set(["talking", "auto_images", "web_search", "avatar_cheeks", "avatar_body_follow"]);
 const jobButtons = ["render", "play", "generate", "motion-preview", "collect-images", "revise-btn", "download-model-btn"];
 const rates = { Calm: 155, Hyped: 185, Deadpan: 165 };
-let state, selected = 0, busy = false, timer, previewVersion = 0, previewUrl;
-let voiceChoices = {}, kokoroReady = false, edgeReady = false, installedModels = [], modelCatalog = [], musicTracks = [], chatHistory = [], undoStack = [];
+let state, baseDefaults, selected = 0, busy = false, timer, saveTimer, previewVersion = 0, previewUrl;
+let voiceChoices = {}, kokoroReady = false, edgeReady = false, installedModels = [], modelCatalog = [], musicTracks = [], projectList = [], chatHistory = [], undoStack = [];
 
 function updateMusicChoices() {
   const sel = $("bgm");
@@ -123,8 +123,119 @@ function message(text, error = false) {
   $("job-status").classList.toggle("error", error);
 }
 function saveDraft() {
-  try { localStorage.setItem("clipwright-project", JSON.stringify(state)); $("save-state").textContent = "Draft, autosaved"; }
+  try { localStorage.setItem("clipwright-project", JSON.stringify(state)); $("save-state").textContent = state.project_id ? "Saved · autosyncing" : "Draft, autosaved"; }
   catch { $("save-state").textContent = "Use Save project to keep edits"; }
+  if (state.project_id) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveProjectToServer(true), 1200);
+  }
+}
+
+async function saveProjectToServer(silent = false) {
+  try {
+    if ($("project-name") && $("project-name").value.trim()) state.project_name = $("project-name").value.trim();
+    const res = await (await api("/api/projects", state)).json();
+    state.project_id = res.id;
+    state.project_name = res.name;
+    projectList = res.projects || projectList;
+    if ($("project-name")) $("project-name").value = state.project_name;
+    if ($("project-count")) $("project-count").textContent = String(projectList.length);
+    $("save-state").textContent = "Saved to projects";
+    try { localStorage.setItem("clipwright-project", JSON.stringify(state)); } catch {}
+    if (!silent) {
+      renderProjectManager();
+      message(`Saved project "${state.project_name}".`);
+    }
+  } catch (error) {
+    if (!silent) message(error.message, true);
+  }
+}
+
+function toggleProjectManager(open) {
+  $("project-manager").hidden = !open;
+  $("workspace").hidden = open;
+  if (open) renderProjectManager();
+}
+
+function renderProjectManager() {
+  if ($("project-count")) $("project-count").textContent = String(projectList.length);
+  const grid = $("project-grid");
+  if (!grid || !grid.replaceChildren) return;
+  grid.replaceChildren();
+  const filter = ($("project-search")?.value || "").trim().toLowerCase();
+  const visible = projectList.filter(p => !filter || p.name.toLowerCase().includes(filter) || p.topic.toLowerCase().includes(filter));
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "pm-empty";
+    empty.textContent = projectList.length ? "No projects match your search." : "No saved projects yet. Click '💾 Save' in the top bar or '+ New project' above.";
+    grid.append(empty);
+    return;
+  }
+  visible.forEach(item => {
+    const card = document.createElement("article");
+    const isActive = state && state.project_id === item.id;
+    card.className = `pm-card${isActive ? " active" : ""}`;
+    card.style.borderTop = `4px solid ${item.accent || "#FF6B3D"}`;
+    const top = document.createElement("div");
+    const head = document.createElement("div"); head.className = "pm-card-head";
+    const title = document.createElement("h3"); title.className = "pm-card-title"; title.textContent = item.name;
+    head.append(title);
+    if (isActive) {
+      const pill = document.createElement("span"); pill.className = "pm-active-pill"; pill.textContent = "Active";
+      head.append(pill);
+    }
+    const topic = document.createElement("p"); topic.className = "pm-card-topic"; topic.textContent = item.topic;
+    const when = item.updated_at ? new Date(item.updated_at * 1000).toLocaleString() : "";
+    const meta = document.createElement("div"); meta.className = "pm-card-meta";
+    meta.textContent = `${item.scene_count} scenes · ${item.theme} theme${when ? " · " + when : ""}`;
+    top.append(head, topic, meta);
+    const tools = document.createElement("div"); tools.className = "pm-card-tools";
+    const openBtn = document.createElement("button"); openBtn.className = "primary"; openBtn.textContent = isActive ? "Editing" : "Open";
+    openBtn.onclick = async () => {
+      try {
+        const res = await (await api(`/api/projects/${item.id}`)).json();
+        state = { ...structuredClone(baseDefaults), ...res.project };
+        selected = 0; chatHistory = []; undoStack = [];
+        renderChat(); draw(); showStill();
+        toggleProjectManager(false);
+        message(`Opened project "${state.project_name}".`);
+      } catch (error) { message(error.message, true); }
+    };
+    const dupBtn = document.createElement("button"); dupBtn.textContent = "Duplicate";
+    dupBtn.onclick = async () => {
+      try {
+        const res = await (await api(`/api/projects/${item.id}/duplicate`, {})).json();
+        projectList = res.projects || projectList;
+        renderProjectManager();
+        message(`Duplicated "${res.name}".`);
+      } catch (error) { message(error.message, true); }
+    };
+    const expBtn = document.createElement("button"); expBtn.textContent = "Export JSON";
+    expBtn.onclick = async () => {
+      try {
+        const res = await (await api(`/api/projects/${item.id}`)).json();
+        const url = URL.createObjectURL(new Blob([JSON.stringify(res.project, null, 2)], { type: "application/json" }));
+        const link = document.createElement("a"); link.href = url;
+        link.download = `${(item.name || "clipwright-project").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) { message(error.message, true); }
+    };
+    const delBtn = document.createElement("button"); delBtn.textContent = "Delete";
+    delBtn.onclick = async () => {
+      if (!confirm(`Delete project "${item.name}"?`)) return;
+      try {
+        const res = await (await api(`/api/projects/${item.id}/delete`, {})).json();
+        projectList = res.projects || [];
+        if (state && state.project_id === item.id) state.project_id = "";
+        renderProjectManager();
+        message(`Deleted "${item.name}".`);
+      } catch (error) { message(error.message, true); }
+    };
+    tools.append(openBtn, dupBtn, expBtn, delBtn);
+    card.append(top, tools);
+    grid.append(card);
+  });
 }
 function changed() {
   saveDraft();
@@ -250,6 +361,8 @@ function draw() {
   updateModelChoices();
   updateMusicChoices();
   updateAvatarUi();
+  if ($("project-name")) $("project-name").value = state.project_name || state.topic.split("\n")[0].slice(0, 60) || "Untitled Project";
+  if ($("project-count")) $("project-count").textContent = String(projectList.length);
   document.querySelectorAll("[data-tone]").forEach(button => {
     const active = button.dataset.tone === state.tone;
     button.classList.toggle("selected", active); button.setAttribute("aria-pressed", active);
@@ -441,13 +554,15 @@ async function start() {
   installedModels = initial.models || [];
   modelCatalog = initial.model_catalog || [];
   musicTracks = initial.music_tracks || [];
+  projectList = initial.projects || [];
   voiceChoices = {
     kokoro: initial.kokoro_voices,
     edge: initial.edge_voices || [],
     pyttsx3: initial.voices.map(name => ({ id: name, name })),
   };
   const defaults = {
-    ...initial.script, tone: "Hyped", tts: kokoroReady ? "kokoro" : edgeReady ? "edge" : "pyttsx3", voice: "", rate: 185,
+    ...initial.script, project_id: "", project_name: initial.script.topic,
+    tone: "Hyped", tts: kokoroReady ? "kokoro" : edgeReady ? "edge" : "pyttsx3", voice: "", rate: 185,
     model: initial.models[0] || "", gpu_layers: 35, n_ctx: 4096, accent: "#FF6B3D", fps: 30,
     theme: "dark", font_style: "impact", bg_effect: "orbs", text_anim: "slide", caption_style: "box", caption_anim: "highlight", transition: "fade", camera_style: "ken_burns",
     motion: "lively", talking: true, avatar_style: "round", avatar_color: "#F4F1EA",
@@ -456,6 +571,7 @@ async function start() {
     bgm: "synth_lofi", bgm_volume: 18, target_scenes: 6, render_quality: "hd",
     auto_images: true, web_search: true
   };
+  baseDefaults = structuredClone(defaults);
   state = structuredClone(defaults);
   try {
     const saved = JSON.parse(localStorage.getItem("clipwright-project"));
@@ -605,6 +721,44 @@ async function start() {
   };
   $("back").onclick = showStill;
   $("task-dismiss").onclick = () => $("task-progress").hidden = true;
+  const startNewProject = async () => {
+    if (state.project_id || state.topic !== defaults.topic) await saveProjectToServer(true);
+    state = structuredClone(defaults);
+    state.project_id = "";
+    state.project_name = "New Video Project";
+    selected = 0; chatHistory = []; undoStack = [];
+    renderChat(); draw(); showStill();
+    toggleProjectManager(false);
+    $("topic").focus();
+    message("Started a new project. Enter your topic and click 🔥 Let him cook!");
+  };
+  $("open-projects").onclick = () => toggleProjectManager($("project-manager").hidden);
+  $("pm-resume").onclick = () => toggleProjectManager(false);
+  $("project-save").onclick = () => saveProjectToServer(false);
+  $("project-new").onclick = startNewProject;
+  $("pm-new").onclick = startNewProject;
+  $("project-dup").onclick = async () => {
+    await saveProjectToServer(true);
+    if (!state.project_id) return;
+    try {
+      const res = await (await api(`/api/projects/${state.project_id}/duplicate`, {})).json();
+      projectList = res.projects || projectList;
+      state = { ...structuredClone(defaults), ...res.project };
+      draw(); showStill();
+      message(`Switched to duplicate "${state.project_name}".`);
+    } catch (error) { message(error.message, true); }
+  };
+  $("project-close").onclick = async () => {
+    await saveProjectToServer(true);
+    toggleProjectManager(true);
+    message(`Saved "${state.project_name}" and opened Project Manager.`);
+  };
+  $("project-name").addEventListener("input", () => {
+    state.project_name = $("project-name").value;
+    saveDraft();
+  });
+  $("project-search").addEventListener("input", renderProjectManager);
+  $("pm-import").onclick = () => $("project-file").click();
   $("save").onclick = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = "clipwright-project.json"; link.click();
@@ -614,9 +768,12 @@ async function start() {
   $("project-file").onchange = async event => {
     try {
       const file = event.target.files[0]; if (!file) return;
-      const next = { ...defaults, ...JSON.parse(await file.text()) };
+      const next = { ...defaults, ...JSON.parse(await file.text()), project_id: "" };
       await api("/api/preview", next);
-      state = next; selected = 0; draw(); showStill(); message("Project opened.");
+      state = next; selected = 0; draw(); showStill();
+      await saveProjectToServer(false);
+      toggleProjectManager(false);
+      message("Project imported and saved to Project Manager.");
     } catch (error) { message(`Could not open project: ${error.message}`, true); }
     finally { event.target.value = ""; }
   };

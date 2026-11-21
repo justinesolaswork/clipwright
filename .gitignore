@@ -15,6 +15,7 @@ models/kokoro/*.bin
 # Runtime caches & generated outputs
 work/
 out/
+projects/*.json
 assets/media/
 assets/music/
 assets/avatars/

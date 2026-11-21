@@ -8,7 +8,7 @@ import wave
 
 from PIL import Image, ImageChops
 
-from app import validate
+from app import delete_project_record, duplicate_project_record, list_projects, load_project_record, save_project_record, validate
 from media import _is_safe_public_url, _score_candidate, asset_path, avatar_path, build_query, save_uploaded_avatar, save_uploaded_image
 import music
 from render import audio_levels, compose_frame, draw_mascot, full_caption, prepare_scene
@@ -263,3 +263,27 @@ class AnimationTests(unittest.TestCase):
         for bad in ({"avatar_move": "teleport"}, {"camera_style": "drone"}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate({**copy.deepcopy(DEMO_SCRIPT), **bad})
+
+    def test_project_manager_save_duplicate_load_delete(self):
+        project = {**copy.deepcopy(DEMO_SCRIPT), "project_name": "Test Reel Alpha"}
+        saved = save_project_record(project)
+        pid = saved["id"]
+        dup_id = ""
+        try:
+            self.assertEqual(saved["name"], "Test Reel Alpha")
+            loaded = load_project_record(pid)
+            self.assertEqual(loaded["project_name"], "Test Reel Alpha")
+            dup = duplicate_project_record(pid)
+            dup_id = dup["id"]
+            self.assertNotEqual(pid, dup_id)
+            self.assertIn("(Copy)", dup["name"])
+            ids = {p["id"] for p in list_projects()}
+            self.assertIn(pid, ids)
+            self.assertIn(dup_id, ids)
+        finally:
+            for item_id in (pid, dup_id):
+                if item_id:
+                    try:
+                        delete_project_record(item_id)
+                    except ValueError:
+                        pass
