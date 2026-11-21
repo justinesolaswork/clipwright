@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clipwright — Studio</title>
+  <link rel="stylesheet" href="/studio.css">
+  <script defer src="/studio.js"></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/"><span class="logo">▶</span> Clipwright</a>
+    <span id="save-state">Local studio</span>
+  </header>
+  <section id="task-progress" class="task-progress" aria-label="Current task" hidden>
+    <div class="task-heading">
+      <strong id="task-title">Working…</strong>
+      <span id="token-live" class="token-badge" hidden></span>
+      <span id="task-elapsed">0:00 elapsed</span>
+      <button id="task-dismiss" aria-label="Dismiss task status" hidden>×</button>
+    </div>
+    <div id="task-stage" role="status" aria-live="polite"></div>
+    <progress id="progress" max="100" aria-labelledby="task-title task-stage"></progress>
+  </section>
+  <main>
+    <aside id="idea">
+      <h2>Idea</h2>
+      <label for="topic">Topic or notes</label>
+      <textarea id="topic" rows="3" maxlength="2000"></textarea>
+      <label>Voiceover tone</label>
+      <div class="tones" role="group" aria-label="Voiceover tone">
+        <button data-tone="Calm">Calm</button><button data-tone="Hyped">Hyped</button><button data-tone="Deadpan">Deadpan</button>
+      </div>
+      <label for="target_scenes">Video length</label>
+      <select id="target_scenes">
+        <option value="4">Quick punch · 4 scenes (~18 sec)</option>
+        <option value="6">Standard reel · 6 scenes (~30 sec)</option>
+        <option value="8">Deep explainer · 8 scenes (~42 sec)</option>
+        <option value="10">Full story · 10 scenes (~55 sec)</option>
+      </select>
+      <button id="generate" class="wide primary">🔥 Let him cook!</button>
+      <div id="cook-summary" class="cook-summary" hidden></div>
+      <label class="check"><input id="web_search" type="checkbox"> Web search before writing</label>
+      <p class="hint">Gives Qwen live web snippets so scripts stay accurate on recent topics.</p>
+      <div id="web-sources" class="hint" hidden></div>
+      <label class="check"><input id="auto_images" type="checkbox"> Auto-find images after writing</label>
+      <p class="hint">Searches the web (with Wikimedia fallback) using scene keywords. Images are saved locally.</p>
+      <button id="collect-images" class="wide">Find scene images</button>
+      <p id="model-hint" class="hint"></p>
+      <div class="note"><strong>Review before you render</strong><p>AI scripts can get details wrong. Check names, numbers and claims in each scene.</p></div>
+      <details id="settings">
+        <summary>Voice & model settings</summary>
+        <label for="tts">Voice engine</label><select id="tts"><option value="kokoro">Kokoro · local neural voices</option><option value="edge">Edge Neural · realistic accents (free)</option><option value="pyttsx3">Windows voice · local</option><option value="silent">Silent · testing</option></select>
+        <p id="voice-hint" class="hint"></p>
+        <label for="voice">Voice</label><select id="voice"><option value="">System default</option></select>
+        <label for="rate">Speaking rate (words/min)</label><input id="rate" type="number" min="100" max="260">
+        <label for="model-select">Installed AI model</label><select id="model-select"></select>
+        <label for="model">Local GGUF model path</label><input id="model" placeholder="C:\models\your-model.gguf">
+        <label for="download-model-key">Get another free local AI model</label>
+        <div class="chat-input-row"><select id="download-model-key"></select><button id="download-model-btn" type="button">Download</button></div>
+        <p class="hint">Models download directly to models/ with checksum verification and appear in the selector above.</p>
+        <div class="pair"><div><label for="gpu_layers">GPU layers</label><input id="gpu_layers" type="number" min="0" max="100"></div><div><label for="n_ctx">Context size</label><input id="n_ctx" type="number" min="1024" max="16384" step="1024"></div></div>
+      </details>
+      <details id="music-settings">
+        <summary>Background music · 30+ open-source tracks</summary>
+        <label for="bgm">Music track</label>
+        <div class="chat-input-row"><select id="bgm"><option value="none">No background music</option></select><button id="bgm-random" type="button">🎲 Random</button></div>
+        <div class="image-tools">
+          <button id="bgm-preview" type="button">▶ Preview track</button>
+          <button id="bgm-upload" type="button">Upload MP3 / WAV</button>
+        </div>
+        <audio id="bgm-player" controls hidden></audio>
+        <label for="bgm_volume">Music volume (%)</label><input id="bgm_volume" type="range" min="0" max="60" step="2">
+        <label for="bgm-query">Search more open-source music (Wikimedia CC)</label>
+        <div class="chat-input-row"><input id="bgm-query" type="text" maxlength="120" placeholder="e.g. lofi chill, synth, piano, upbeat"><button id="bgm-search" type="button">Find track</button></div>
+        <p class="hint">Includes 5 instant studio beats + 27 Kevin MacLeod / Wikimedia Commons open-source tracks (auto-credited on export).</p>
+      </details>
+      <details id="look">
+        <summary>Theme, motion, avatar & export</summary>
+        <button id="look-random" type="button" class="wide">🎲 Randomize theme &amp; effects</button>
+        <p class="hint">Shuffles theme, font, background, headline animation, subtitles, transition, motion and accent colour.</p>
+        <label for="theme">Visual theme</label><select id="theme"><option value="dark">Studio Dark · classic</option><option value="neon">Cyber Neon · purple glow</option><option value="sunset">Sunset Glow · warm gradient</option><option value="midnight">Midnight Ocean · deep teal</option><option value="minimal">Minimal Light · crisp paper</option><option value="retro">Retro VHS · scanlines</option></select>
+        <label for="font_style">Font style</label><select id="font_style"><option value="impact">Bold Impact · punchy</option><option value="modern">Modern Sans · Bahnschrift / Segoe</option><option value="tech">Tech Mono · Consolas</option><option value="editorial">Editorial Serif · Georgia</option><option value="playful">Playful · Comic / casual</option><option value="clean">Geometric Clean · Verdana</option></select>
+        <label for="bg_effect">Background effect</label><select id="bg_effect"><option value="orbs">Floating orbs</option><option value="grid">Animated cyber grid</option><option value="confetti">Sparkles & shapes</option><option value="waves">Audio-reactive waves</option><option value="none">Clean · no effect</option></select>
+        <label for="text_anim">Headline animation</label><select id="text_anim"><option value="slide">Slide up</option><option value="pop">Pop & bounce</option><option value="split">Split slide (left / right)</option><option value="zoom">Zoom slam</option><option value="glitch">Glitch punch</option><option value="typewriter">Typewriter reveal</option></select>
+        <label for="caption_style">Subtitle style</label><select id="caption_style"><option value="box">Classic dark pill</option><option value="karaoke">TikTok karaoke pop</option><option value="bold">Bold outline (no box)</option><option value="minimal">Minimal translucent bar</option></select>
+        <label for="caption_anim">Subtitle effect</label><select id="caption_anim"><option value="highlight">Word highlight · classic</option><option value="pop">Word pop · scale punch</option><option value="bounce">Kinetic bounce · jump on beat</option><option value="glow">Neon glow · accent halo</option><option value="reveal">Progressive reveal · word by word</option><option value="slide_up">Slide-up entrance</option></select>
+        <label for="transition">Scene transition</label><select id="transition"><option value="fade">Smooth crossfade</option><option value="slide_left">Whip slide left</option><option value="slide_up">Vertical swipe up</option><option value="zoom_in">Zoom cut</option><option value="flash">Accent flash</option><option value="none">Hard cut</option></select>
+        <label for="camera_style">Videography &amp; camera movement</label><select id="camera_style"><option value="ken_burns">Ken Burns · alternating pan &amp; zoom</option><option value="cinema_push">Cinematic push-in + letterbox</option><option value="handheld">Handheld vlog sway</option><option value="dynamic_tilt">Dynamic zoom &amp; voice punch</option><option value="spotlight">Stage spotlight frame</option><option value="static">Locked tripod · static</option></select>
+        <label for="motion">Motion energy</label><select id="motion"><option value="lively">Lively · bounce, zoom &amp; transitions</option><option value="hyper">Hyper · fast kinetic energy</option><option value="gentle">Gentle · subtle movement</option><option value="none">Still · no motion effects</option></select>
+        <label class="check"><input id="talking" type="checkbox"> Talking mouth · follows voice audio</label>
+        <label for="accent">Accent colour</label><input id="accent" type="color">
+        <label for="render_quality">Export speed &amp; resolution</label>
+        <select id="render_quality">
+          <option value="fast">Fast 720p · 720 × 1280 (~2× faster)</option>
+          <option value="hd">Full HD 1080p · 1080 × 1920 (sharpest)</option>
+          <option value="draft">Quick Draft 540p · 540 × 960 (fastest)</option>
+        </select>
+        <label for="fps">Frames per second</label><select id="fps"><option value="24">24 fps · fast &amp; cinematic</option><option value="30">30 fps · standard</option><option value="60">60 fps · ultra smooth (2× slower)</option></select>
+        <p class="hint">Tip: Use Fast 720p at 24 or 30 fps for quick exports, or Full HD 1080p for final publishing.</p>
+      </details>
+      <details id="avatar-studio">
+        <summary>Avatar studio · build your own</summary>
+        <label for="avatar-preset">Preset characters</label>
+        <div class="chat-input-row"><select id="avatar-preset"></select><button id="avatar-random" type="button">🎲 Random</button></div>
+        <label for="avatar_style">Character &amp; ears</label><select id="avatar_style"><option value="round">Round robot</option><option value="square">Square robot</option><option value="cat">Cat bot</option><option value="bunny">Bunny bot</option><option value="bear">Bear bot</option><option value="none">No avatar · images and text only</option></select>
+        <label for="avatar_eyes">Eyes</label><select id="avatar_eyes"><option value="round">Round</option><option value="wide">Wide &amp; shiny</option><option value="happy">Happy arcs</option><option value="sleepy">Sleepy</option><option value="star">Star eyes</option><option value="wink">Wink</option></select>
+        <label for="avatar_antenna">Antenna</label><select id="avatar_antenna"><option value="ball">Ball</option><option value="double">Double</option><option value="bolt">Lightning bolt</option><option value="none">None</option></select>
+        <label for="avatar_accessory">Accessory</label><select id="avatar_accessory"><option value="none">None</option><option value="glasses">Glasses</option><option value="sunglasses">Sunglasses</option><option value="headphones">Headphones</option><option value="crown">Crown</option><option value="party">Party hat</option><option value="cap">Cap</option><option value="bowtie">Bow tie</option></select>
+        <label for="avatar_color">Head colour</label><input id="avatar_color" type="color">
+        <label class="check"><input id="avatar_body_follow" type="checkbox"> Body follows accent colour</label>
+        <label for="avatar_body_color">Body colour</label><input id="avatar_body_color" type="color">
+        <label class="check"><input id="avatar_cheeks" type="checkbox"> Rosy cheeks</label>
+        <label for="avatar_size">Avatar size (%)</label><input id="avatar_size" type="range" min="70" max="130" step="5">
+        <label for="avatar_position">Stage placement</label><select id="avatar_position"><option value="auto">Auto (bottom-right / center)</option><option value="alternate">Alternate left &amp; right per scene</option><option value="roam">Roam corners across scenes</option><option value="right">Bottom right</option><option value="left">Bottom left</option><option value="center">Bottom center</option><option value="mid_right">Mid-screen right · beside image</option><option value="mid_left">Mid-screen left · beside image</option><option value="top_right">Top-right presenter badge</option><option value="top_left">Top-left presenter badge</option></select>
+        <label for="avatar_move">Location movement</label><select id="avatar_move"><option value="bounce">Idle bounce &amp; tilt</option><option value="walk_in">Walk / slide in from edge</option><option value="pace">Stage pacing (left &amp; right)</option><option value="float">Zero-G figure-8 float</option><option value="jump">Excited jump beats</option><option value="peek">Side border peek-in</option></select>
+        <label>Your own avatar image</label>
+        <div class="image-tools">
+          <button id="avatar-upload" type="button">Upload PNG / image</button>
+          <img id="avatar-custom-preview" alt="Custom avatar" hidden>
+          <button id="avatar-remove" type="button" hidden>Remove</button>
+        </div>
+        <p class="hint">Transparent PNGs work best. A custom image replaces the drawn character and still bounces and pulses with the voice.</p>
+      </details>
+      <div class="project-actions"><button id="save">Save project</button><button id="load">Open project</button></div>
+      <input id="project-file" type="file" accept=".json,application/json" hidden>
+    </aside>
+    <section id="script">
+      <div class="section-heading"><h2>Script and scenes</h2><span id="scene-count"></span></div>
+      <div id="ai-editor" class="ai-editor">
+        <div class="ai-editor-top">
+          <strong>✦ AI Script Editor</strong>
+          <div class="ai-editor-controls">
+            <select id="revise-scope" aria-label="AI edit scope">
+              <option value="all">Whole script</option>
+              <option value="selected">Selected scene only</option>
+            </select>
+            <button id="undo-edit" type="button" disabled title="Undo last AI edit">↶ Undo</button>
+          </div>
+        </div>
+        <div id="chat-log" class="chat-log" aria-live="polite" hidden></div>
+        <div class="quick-chips" aria-label="Quick edit suggestions">
+          <button type="button" class="chip" data-prompt="Make this a 30 second video with a stronger hook and smooth pacing.">Make it 30s</button>
+          <button type="button" class="chip" data-prompt="Make the script more interesting and engaging with sharper, more vivid lines.">More interesting</button>
+          <button type="button" class="chip" data-prompt="Make it more trendy, punchy, and TikTok/Reels friendly without sounding cringe.">More trendy</button>
+          <button type="button" class="chip" data-prompt="Rewrite Scene 1 with a much stronger scroll-stopping hook.">Stronger hook</button>
+        </div>
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" maxlength="1000" placeholder="Ask AI to revise script… e.g. make it 30 seconds or more trendy" aria-label="AI script edit instruction">
+          <button id="revise-btn" type="button" class="primary">Apply edit</button>
+        </div>
+      </div>
+      <div id="scenes"></div>
+      <button id="add" class="wide dashed">+ Add scene</button>
+      <p class="hint">Click a scene to preview it. Edit any text directly.</p>
+    </section>
+    <aside id="preview">
+      <div class="section-heading"><h2>Preview</h2><span>9:16, 1080 × 1920</span></div>
+      <div class="preview-inner">
+        <div class="screen"><img id="still" alt="Selected scene preview"><video id="video" controls playsinline hidden></video></div>
+        <button id="play" class="wide">▶ Play scene voiceover</button>
+        <button id="motion-preview" class="wide">▶ Preview scene animation</button>
+        <audio id="audio" controls hidden></audio>
+        <button id="render" class="primary wide">Render MP4</button>
+        <div id="job-status" role="status" aria-live="polite">Your idea. Your voice. Made locally.</div>
+        <a id="download" class="download" hidden download="clipwright.mp4">↓ Download MP4</a>
+        <a id="credits" class="download" hidden download="image-credits.txt">↓ Image sources & credits</a>
+        <button id="back" class="wide" hidden>Back to scene preview</button>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>

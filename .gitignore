@@ -1,0 +1,25 @@
+# Python & virtual environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local AI model weights (downloaded via download_model.py or Studio settings)
+models/*.gguf
+models/*.part
+models/*.chunks/
+models/kokoro/*.onnx
+models/kokoro/*.bin
+
+# Runtime caches & generated outputs
+work/
+out/
+assets/media/
+assets/music/
+assets/avatars/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.log
